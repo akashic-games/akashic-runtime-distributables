@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: 24
+  PNPM_VERSION: 10
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Build all
+        run: |
+          pnpm install
+          pnpm build:all
+
+      - name: Create distributions
+        run: zip -r dist.zip ./dist
+
+      - name: Setup variables
+        id: release_notes
+        run: |
+          DATE=$(date -u '+%Y-%m-%d')
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+
+          VERSIONS=$(jq -r '.versions[] | "- " + .version' versions.json)
+          {
+            echo "body<<EOF"
+            echo "# Release (${DATE})"
+            echo ""
+            echo "$VERSIONS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        run: |
+          gh release create "${{ steps.release_notes.outputs.date }}" \
+            --title "Release (${{ steps.release_notes.outputs.date }})" \
+            --notes "${{ steps.release_notes.outputs.body }}" \
+            dist.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

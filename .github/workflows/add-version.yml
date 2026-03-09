@@ -1,0 +1,90 @@
+name: Add Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "engine-files のバージョン (x.y.z) または 'latest'"
+        default: latest
+        required: true
+      base:
+        description: "マージ先ブランチ"
+        default: main
+        required: true
+
+env:
+  NODE_VERSION: 24
+  PNPM_VERSION: 10
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  add-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Resolve version
+        id: resolve_version
+        run: |
+          if [ "$INPUT_VERSION" = "latest" ]; then
+            VERSION=$(npm view @akashic/engine-files version)
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+
+      - name: Add version
+        id: add_version
+        run: |
+          NEW_VERSION=$(pnpm --silent add-version "$RESOLVE_VERSION")
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+        env:
+          RESOLVE_VERSION: ${{ steps.resolve_version.outputs.version }}
+
+      - name: Run tests
+        run: |
+          pnpm build --version "$ADD_VERSION"
+          pnpm test:all
+        env:
+          ADD_VERSION: ${{ steps.add_version.outputs.version }}
+
+      - name: Push branch and create pull request
+        run: |
+          BRANCH="add-version-${NEW_VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
+          git add versions.json
+          git commit -m "chore: add version ${NEW_VERSION}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: add version ${NEW_VERSION}" \
+            --body "$(printf '# このPullRequestが解決する内容\nversions.json に `%s` を追加します。\n' "${NEW_VERSION}")" \
+            --base "$INPUT_BASE" \
+            --head "$BRANCH"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.add_version.outputs.version }}
+          INPUT_BASE: ${{ inputs.base }}

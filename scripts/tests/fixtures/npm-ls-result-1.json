@@ -1,0 +1,54 @@
+{
+  "version": "3.2.0-0",
+  "name": "@akashic/akashic-runtime",
+  "dependencies": {
+    "@akashic/engine-files": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/@akashic/engine-files/-/engine-files-3.0.0.tgz",
+      "dependencies": {
+        "@akashic/akashic-engine": {
+          "version": "3.0.0-beta.30",
+          "resolved": "https://registry.npmjs.org/@akashic/akashic-engine/-/akashic-engine-3.0.0-beta.30.tgz"
+        },
+        "@akashic/game-driver": {
+          "version": "2.0.0-beta.9",
+          "resolved": "https://registry.npmjs.org/@akashic/game-driver/-/game-driver-2.0.0-beta.9.tgz"
+        },
+        "@akashic/pdi-types": {
+          "version": "1.1.0",
+          "resolved": "https://registry.npmjs.org/@akashic/pdi-types/-/pdi-types-1.1.0.tgz"
+        },
+        "@akashic/playlog-client": {
+          "version": "7.0.42",
+          "resolved": "https://registry.npmjs.org/@akashic/playlog-client/-/playlog-client-7.0.42.tgz"
+        }
+      }
+    },
+    "@akashic/playlog-client": {
+      "version": "7.2.1",
+      "resolved": "https://registry.npmjs.org/@akashic/playlog-client/-/playlog-client-7.2.1.tgz",
+      "dependencies": {
+        "@akashic/amflow-message": {
+          "version": "4.1.1",
+          "resolved": "https://registry.npmjs.org/@akashic/amflow-message/-/amflow-message-4.1.1.tgz"
+        },
+        "@akashic/amflow": {
+          "version": "3.0.0",
+          "resolved": "https://registry.npmjs.org/@akashic/amflow/-/amflow-3.0.0.tgz"
+        },
+        "@akashic/amtplib": {
+          "version": "1.0.94",
+          "resolved": "https://registry.npmjs.org/@akashic/amtplib/-/amtplib-1.0.94.tgz"
+        },
+        "es6-promise": {
+          "version": "4.2.8",
+          "resolved": "https://registry.npmjs.org/es6-promise/-/es6-promise-4.2.8.tgz"
+        },
+        "node-uuid": {
+          "version": "1.4.8",
+          "resolved": "https://registry.npmjs.org/node-uuid/-/node-uuid-1.4.8.tgz"
+        }
+      }
+    }
+  }
+}

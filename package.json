@@ -1,0 +1,42 @@
+{
+  "private": true,
+  "name": "@akashic/akashic-runtime-distributables",
+  "version": "1.0.0",
+  "description": "Distribution repository for akashic-runtime artifacts",
+  "type": "module",
+  "scripts": {
+    "build": "tsx scripts/cli.ts build",
+    "build:all": "tsx scripts/cli.ts build --version=all",
+    "add-version": "tsx scripts/cli.ts add-version",
+    "test": "pnpm test:format && vitest run --project unit",
+    "test:format": "prettier --check .",
+    "test:unit": "vitest run --project unit",
+    "test:e2e": "vitest run --project e2e",
+    "test:all": "vitest run",
+    "format": "prettier --write ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:akashic-games/akashic-runtime-distributables.git"
+  },
+  "author": "DWANGO Co., Ltd.",
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/cli": "^7.28.6",
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "@types/node": "^25.2.0",
+    "@types/semver": "^7.7.1",
+    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "^4.0.18",
+    "babelify": "^10.0.0",
+    "browserify": "^17.0.1",
+    "glob": "^13.0.0",
+    "prettier": "^3.8.1",
+    "semver": "^7.7.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "uglify-js": "^3.19.3",
+    "vitest": "^4.0.18"
+  }
+}

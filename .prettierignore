@@ -1,0 +1,7 @@
+node_modules/
+temp/
+dist/
+coverage/
+
+package.json
+pnpm-lock.yaml
