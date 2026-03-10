@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import semver from "semver";
 import { buildVersion, type BuildOptions } from "./build.js";
 import { addVersion } from "./addVersion.js";
+import type { VersionsInfoDependency } from "./types.js";
 import { readVersionsJson } from "./utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,8 +27,13 @@ async function main() {
 }
 
 async function runAddVersion(args: string[]) {
-	const { positionals } = parseArgs({
+	const { positionals, values } = parseArgs({
 		args,
+		options: {
+			"versions-info": {
+				type: "string",
+			},
+		},
 		allowPositionals: true,
 	});
 
@@ -42,7 +48,21 @@ async function runAddVersion(args: string[]) {
 		throw new Error(`Invalid version format: ${baseVersion}. Expected x.y.z format (e.g., 3.13.4)`);
 	}
 
-	const newVersion = await addVersion({ versionsJsonPath, baseVersion });
+	let versionsInfo: Partial<VersionsInfoDependency> | undefined;
+	if (values["versions-info"] != null) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(values["versions-info"]);
+		} catch {
+			throw new Error(`--versions-info must be a valid JSON string`);
+		}
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			throw new Error(`--versions-info must be a JSON object`);
+		}
+		versionsInfo = parsed as Partial<VersionsInfoDependency>;
+	}
+
+	const newVersion = await addVersion({ versionsJsonPath, baseVersion, versionsInfo });
 	console.log(newVersion);
 }
 

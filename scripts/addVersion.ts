@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { exec as execCallback } from "node:child_process";
 import { promisify } from "node:util";
 import semver from "semver";
-import type { VersionInfo } from "./types.js";
+import type { VersionInfo, VersionsInfoDependency } from "./types.js";
 import { readVersionsJson } from "./utils.js";
 
 const exec = promisify(execCallback);
@@ -10,6 +10,7 @@ const exec = promisify(execCallback);
 export interface AddVersionOptions {
 	versionsJsonPath: string;
 	baseVersion: string;
+	versionsInfo?: Partial<VersionsInfoDependency>;
 }
 
 /**
@@ -45,17 +46,33 @@ export async function addVersion(options: AddVersionOptions): Promise<string> {
 	}
 	const engineFilesVersion = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
 
-	// 5. playlog-client と pdi-game-runner の latest バージョンを取得
+	// 5. playlog-client と pdi-game-runner のバージョンを取得
+	// pdi-game-runner は versionsInfo で指定がない場合、engine-files のメジャーバージョンの最新を取得
 	console.error("Fetching latest versions of dependencies...");
-	const playlogClientVersion = await getLatestNpmVersion("@akashic/playlog-client");
-	const pdiGameRunnerVersion = await getLatestNpmVersion("@akashic/pdi-game-runner");
+	const playlogClientVersion = await resolveNpmVersion("@akashic/playlog-client", options.versionsInfo?.["@akashic/playlog-client"]);
+	const pdiGameRunnerVersion = await resolveNpmVersion(
+		"@akashic/pdi-game-runner",
+		options.versionsInfo?.["@akashic/pdi-game-runner"] ?? `${parsed.major}`
+	);
 
 	console.error(`  @akashic/engine-files: ${engineFilesVersion}`);
 	console.error(`  @akashic/playlog-client: ${playlogClientVersion}`);
 	console.error(`  @akashic/pdi-game-runner: ${pdiGameRunnerVersion}`);
 	console.error();
 
-	// 6. engine-files のバージョンが存在するかチェック
+	// 6. 同一の依存バージョンの組み合わせがすでに存在するかチェック
+	const duplicated = versionsJson.versions.find(
+		v =>
+			v.dependencies["@akashic/engine-files"] === engineFilesVersion &&
+			v.dependencies["@akashic/playlog-client"] === playlogClientVersion &&
+			v.dependencies["@akashic/pdi-game-runner"] === pdiGameRunnerVersion
+	);
+	if (duplicated) {
+		console.error(`Dependency already exists (version ${duplicated.version}). Skipping.`);
+		return duplicated.version;
+	}
+
+	// 7. engine-files のバージョンが存在するかチェック
 	const engineFilesExists = await checkNpmVersionExists("@akashic/engine-files", engineFilesVersion);
 	if (!engineFilesExists) {
 		throw new Error(
@@ -64,7 +81,7 @@ export async function addVersion(options: AddVersionOptions): Promise<string> {
 		);
 	}
 
-	// 7. 新しいバージョン情報のエントリを作成
+	// 8. 新しいバージョン情報のエントリを作成
 	const newVersionInfoEntry = {
 		version: newVersion,
 		dependencies: {
@@ -75,10 +92,10 @@ export async function addVersion(options: AddVersionOptions): Promise<string> {
 		created_at: new Date().toISOString(),
 	} satisfies VersionInfo;
 
-	// 8. versions 配列の先頭に追加
+	// 9. versions 配列の先頭に追加
 	versionsJson.versions.unshift(newVersionInfoEntry);
 
-	// 9. versions.json に書き込む
+	// 10. versions.json に書き込む
 	const updatedContent = JSON.stringify(versionsJson, null, 2) + "\n";
 	await writeFile(versionsJsonPath, updatedContent, "utf-8");
 
@@ -133,15 +150,15 @@ export function calculateVersionFromBase(versions: VersionInfo[], baseVersion: s
 }
 
 /**
- * npm パッケージの latest バージョンを取得
+ * npm パッケージのバージョンを解決して返す。version が未指定の場合は latest を取得する。
  */
-async function getLatestNpmVersion(packageName: string) {
+async function resolveNpmVersion(packageName: string, version: string = "latest") {
 	try {
-		const { stdout } = await exec(`npm view ${packageName} version`);
+		const { stdout } = await exec(`npm view ${packageName}@${version} version`);
 		return stdout.trim();
 	} catch (error) {
 		throw new Error(
-			`Failed to fetch latest version of ${packageName}.\n` + `Error: ${error instanceof Error ? error.message : String(error)}`
+			`Failed to fetch version of ${packageName}@${version}.\n` + `Error: ${error instanceof Error ? error.message : String(error)}`
 		);
 	}
 }
