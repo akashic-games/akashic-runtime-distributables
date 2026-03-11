@@ -7,6 +7,12 @@ on:
         description: "engine-files のバージョン (x.y.z) または 'latest'"
         default: latest
         required: true
+      playlog_client_version:
+        description: "playlog-client のバージョン (省略時は latest)"
+        required: false
+      pdi_game_runner_version:
+        description: "pdi-game-runner のバージョン (省略時は engine-files と同一メジャーバージョンの最新)"
+        required: false
       base:
         description: "マージ先ブランチ"
         default: main
@@ -55,10 +61,19 @@ jobs:
       - name: Add version
         id: add_version
         run: |
-          NEW_VERSION=$(pnpm --silent add-version "$RESOLVE_VERSION")
+          VERSIONS_INFO="{}"
+          if [ -n "$PLAYLOG_CLIENT_VERSION" ]; then
+            VERSIONS_INFO=$(echo "$VERSIONS_INFO" | jq --arg v "$PLAYLOG_CLIENT_VERSION" '. + {"@akashic/playlog-client": $v}')
+          fi
+          if [ -n "$PDI_GAME_RUNNER_VERSION" ]; then
+            VERSIONS_INFO=$(echo "$VERSIONS_INFO" | jq --arg v "$PDI_GAME_RUNNER_VERSION" '. + {"@akashic/pdi-game-runner": $v}')
+          fi
+          NEW_VERSION=$(pnpm --silent add-version "$RESOLVE_VERSION" --versions-info "$VERSIONS_INFO")
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
         env:
           RESOLVE_VERSION: ${{ steps.resolve_version.outputs.version }}
+          PLAYLOG_CLIENT_VERSION: ${{ inputs.playlog_client_version }}
+          PDI_GAME_RUNNER_VERSION: ${{ inputs.pdi_game_runner_version }}
 
       - name: Run tests
         run: |
@@ -76,6 +91,13 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add versions.json
+
+          # 差分がなければ中止
+          if git diff --cached --quiet; then
+            echo "No changes to commit. Skipping."
+            exit 0
+          fi
+
           git commit -m "chore: add version ${NEW_VERSION}"
           git push origin "$BRANCH"
 

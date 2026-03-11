@@ -8,6 +8,8 @@ export interface VersionInfo {
 	created_at: string;
 }
 
+export type VersionsInfoDependency = Omit<VersionInfo["dependencies"], "@akashic/engine-files">;
+
 export interface VersionsJson {
 	schema_version: string;
 	versions: VersionInfo[];

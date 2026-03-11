@@ -19,13 +19,19 @@ pnpm add-version 3.13.4
 ```
 
 上記コマンドの場合、指定したバージョン（例: `3.13.4`）をもとに `versions.json` に新しいエントリ（例: `3.13.4-0` がすでに存在した場合は `3.13.4-1`）が追加されます。
-engine-files 以外の依存モジュールのバージョンは、コマンド実行時点での latest となります。
+engine-files 以外の依存モジュールのバージョンは、`playlog-client` がコマンド実行時点での latest、`pdi-game-runner` が engine-files と同一のメジャーバージョンの最新となります。
 
 追加したバージョン文字列（例: `3.13.4-0`）が stdout に出力されます。
 
 ```sh
 NEW_VERSION=$(pnpm --silent add-version 3.13.4)
 echo "$NEW_VERSION" # 3.13.4-0
+```
+
+`--versions-info` を指定すると、engine-files 以外の依存モジュールのバージョンを指定できます。
+
+```sh
+pnpm add-version 3.13.4 --versions-info '{ "@akashic/playlog-client": "7.3.1", "@akashic/pdi-game-runner": "3.26.4" }'
 ```
 
 ## ビルド
