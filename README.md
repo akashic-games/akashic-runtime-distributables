@@ -60,15 +60,18 @@ zip にないバージョンは通常通りビルドします。
 pnpm build:all --prebuilt-dist-zip ./dist.zip
 ```
 
-生成される成果物は以下です。
+`--prebuilt-dist-zip` に指定する zip ファイルは以下のようなディレクトリ構造である必要があります。
 
-- `akashic-runtime`
-  - full 版の engine-files の成果物を含む akashic-runtime
-- `akashic-runtime-canvas`
-  - canvas 版の engine-files の成果物を含む akashic-runtime
-  - v2 移行のバージョンにのみ存在
-- `entrypoint`
-  - game-runner 向けの entrypoint
+```
+dist/
+├── {version}/          # 例: 3.13.4-0
+│   ├── MANIFEST.md
+│   └── ...             # 各バージョンの生成物
+├── {version}-canvas/   # v2 以降のみ
+│   ├── MANIFEST.md
+│   └── ...
+└── ...
+```
 
 # 開発者向け
 
