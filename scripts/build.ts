@@ -198,6 +198,10 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 	const rootDir = options.rootDir;
 	const distDir = resolve(options.distDir, version);
 
+	if (existsSync(distDir)) {
+		console.warn(`Warning: ${distDir} already exists, overwriting...`);
+	}
+
 	// dist-file-path が指定されている場合は zip から展開を試みる
 	if (options.prebuiltDistZip) {
 		const extracted = await extractVersionFromZip(options.prebuiltDistZip, version, options.rootDir);
@@ -208,9 +212,6 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 		console.log(`Version ${version} not found in zip, building from source...`);
 	}
 
-	if (existsSync(distDir)) {
-		console.warn(`Warning: ${distDir} already exists, overwriting...`);
-	}
 	await rm(distDir, { recursive: true, force: true });
 	await mkdir(distDir, { recursive: true });
 
