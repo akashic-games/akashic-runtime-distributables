@@ -58,6 +58,9 @@ async function runBuild(args: string[]) {
 				type: "boolean",
 				default: false,
 			},
+			"prebuilt-dist-zip": {
+				type: "string",
+			},
 		},
 		allowPositionals: false,
 	});
@@ -71,14 +74,20 @@ async function runBuild(args: string[]) {
 		cwd: rootDir,
 		distDir: resolve(rootDir, "dist"),
 		keepTemp: values["keep-temp"],
+		distFilePath: values["prebuilt-dist-zip"] ? resolve(rootDir, values["prebuilt-dist-zip"]) : undefined,
 	} satisfies BuildOptions;
 
 	if (values.version === "all") {
 		// 全バージョンをビルド
 		console.log(`Building all ${versionsJson.versions.length} versions...`);
 		console.log();
+		let builtCount = 0;
 		for (const versionInfo of versionsJson.versions) {
-			await buildVersion(versionInfo, buildOptions);
+			const built = await buildVersion(versionInfo, buildOptions);
+			if (built) builtCount++;
+		}
+		if (buildOptions.distFilePath && builtCount === 0) {
+			throw new Error("No versions were built: all versions were found in the zip file. The zip may be up to date already.");
 		}
 	} else {
 		// 特定バージョンをビルド

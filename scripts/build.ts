@@ -1,8 +1,8 @@
 import { exec as execCallback } from "node:child_process";
 import { basename, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { copyFile, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
 import { globSync } from "glob";
 import semver from "semver";
 import { validateModule } from "./validateModule.js";
@@ -15,6 +15,7 @@ export interface BuildOptions {
 	cwd: string;
 	distDir: string;
 	keepTemp?: boolean;
+	distFilePath?: string;
 }
 
 // インストール対象として許可されたモジュール
@@ -85,11 +86,122 @@ async function generateManifestMarkdown(versionInfo: VersionInfo, tempDir: strin
 	console.log("MANIFEST.md saved");
 }
 
-export async function buildVersion(versionInfo: VersionInfo, options: BuildOptions) {
+export async function validateDistDir(distDir: string, versionInfo: VersionInfo): Promise<void> {
+	// ディレクトリが空でないか確認する
+	const files = readdirSync(distDir);
+	if (files.length === 0) {
+		throw new Error(`validateDistDir: directory is empty: ${distDir}`);
+	}
+
+	// 必須ファイル
+	const requiredFiles: (string | RegExp)[] = [
+		"MANIFEST.md",
+		"bundle_info.txt",
+		"bootstrap.js",
+		"entry.js",
+		"akashic-engine.js",
+		"game-driver.js",
+		/^playlogClientV.+\.js$/,
+		/^engineFilesV.+\.js$/,
+	];
+	// オプショナルファイル
+	const optionalFiles: (string | RegExp)[] = [
+		"pdi-common-impl.js", // v3 以降にのみ存在
+	];
+
+	const matchesRequired = (file: string, required: string | RegExp) =>
+		typeof required === "string" ? file === required : required.test(file);
+	for (const required of requiredFiles) {
+		if (!files.some(f => matchesRequired(f, required))) {
+			throw new Error(`validateDistDir: required file not found: ${required}`);
+		}
+	}
+
+	// 必須・オプショナルファイル以外が存在しないか確認
+	const allowedFiles = [...requiredFiles, ...optionalFiles];
+	const unexpectedFiles = files.filter(f => !allowedFiles.some(allowed => matchesRequired(f, allowed)));
+	if (unexpectedFiles.length > 0) {
+		throw new Error(`validateDistDir: unexpected file(s) found: ${unexpectedFiles.join(", ")}`);
+	}
+
+	// ファイルの内容を簡易的に確認
+	for (const file of files) {
+		const { size } = await stat(resolve(distDir, file));
+		if (size === 0) {
+			throw new Error(`validateDistDir: file is empty: ${file}`);
+		}
+	}
+
+	// bundle_info.txt に engine-files と pdi-game-runner のバージョン行が含まれるか確認する
+	const bundleInfo = await readFile(resolve(distDir, "bundle_info.txt"), "utf-8");
+	const engineFilesMatch = bundleInfo.match(/^engine-files: (.+)$/m);
+	const pdiGameRunnerMatch = bundleInfo.match(/^pdi-game-runner: (.+)$/m);
+	if (!engineFilesMatch) {
+		throw new Error(`validateDistDir: bundle_info.txt is missing "engine-files" line`);
+	}
+	if (!pdiGameRunnerMatch) {
+		throw new Error(`validateDistDir: bundle_info.txt is missing "pdi-game-runner" line`);
+	}
+
+	// bundle_info.txt に記載されたバージョンが versions.json の定義と一致するか確認する
+	const expectedEngineFiles = versionInfo.dependencies["@akashic/engine-files"];
+	const expectedPdiGameRunner = versionInfo.dependencies["@akashic/pdi-game-runner"];
+	if (engineFilesMatch[1] !== expectedEngineFiles) {
+		throw new Error(`validateDistDir: engine-files version mismatch: expected ${expectedEngineFiles}, got ${engineFilesMatch[1]}`);
+	}
+	if (pdiGameRunnerMatch[1] !== expectedPdiGameRunner) {
+		throw new Error(
+			`validateDistDir: pdi-game-runner version mismatch: expected ${expectedPdiGameRunner}, got ${pdiGameRunnerMatch[1]}`
+		);
+	}
+}
+
+async function extractVersionFromZip(distFilePath: string, version: string, distDir: string, rootDir: string): Promise<boolean> {
+	// zip 内の成果物が dist/ 以下にあること検証
+	const { stdout } = await exec(`unzip -Z1 ${distFilePath}`);
+	const entries = stdout.trim().split("\n").filter(Boolean);
+	const invalidEntries = entries.filter(entry => !entry.startsWith("dist/"));
+	if (invalidEntries.length > 0) {
+		throw new Error(`Invalid zip file: all entries must start with "dist/". Invalid entries: ${invalidEntries.slice(0, 5).join(", ")}`);
+	}
+
+	// dist 以下にバージョンディレクトリが存在するか確認
+	const versionEntry = `dist/${version}/`;
+	const canvasVersionEntry = `dist/${version}-canvas/`;
+	const hasVersion = entries.includes(versionEntry);
+	if (!hasVersion) {
+		return false;
+	}
+
+	// 対象のバージョンのみ展開
+	const patterns = [`"dist/${version}/*"`];
+	if (entries.includes(canvasVersionEntry)) {
+		patterns.push(`"dist/${version}-canvas/*"`);
+	}
+	await exec(`unzip -o ${distFilePath} ${patterns.join(" ")} -d ${rootDir}`);
+	const extracted = [version, ...(entries.includes(canvasVersionEntry) ? [`${version}-canvas`] : [])];
+	console.log(`Extracted: ${extracted.join(", ")}`);
+	return true;
+}
+
+export async function buildVersion(versionInfo: VersionInfo, options: BuildOptions): Promise<boolean> {
 	const version = versionInfo.version;
 	const cwd = options.cwd;
 	const distDir = resolve(options.distDir, version);
 
+	// dist-file-path が指定されている場合は zip から展開を試みる
+	if (options.distFilePath) {
+		const extracted = await extractVersionFromZip(options.distFilePath, version, options.distDir, options.cwd);
+		if (extracted) {
+			await validateDistDir(distDir, versionInfo);
+			return false;
+		}
+		console.log(`Version ${version} not found in zip, building from source...`);
+	}
+
+	if (existsSync(distDir)) {
+		console.warn(`Warning: ${distDir} already exists, overwriting...`);
+	}
 	await rm(distDir, { recursive: true, force: true });
 	await mkdir(distDir, { recursive: true });
 
@@ -271,6 +383,8 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			await copyFile(resolve(distDir, "MANIFEST.md"), resolve(akashicRuntimeCanvasDir, "MANIFEST.md"));
 		}
 
+		await validateDistDir(distDir, versionInfo);
+
 		console.log();
 		console.log(`✓ Version ${version} built successfully in ${distDir}`);
 	} finally {
@@ -282,4 +396,6 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			await rm(tempDir, { recursive: true, force: true });
 		}
 	}
+
+	return true;
 }
