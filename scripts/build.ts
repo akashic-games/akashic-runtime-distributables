@@ -11,11 +11,16 @@ import type { VersionInfo } from "./types.js";
 
 const exec = promisify(execCallback);
 
+export interface PrebuiltDistZip {
+	filePath: string;
+	entries: string[];
+}
+
 export interface BuildOptions {
 	cwd: string;
 	distDir: string;
 	keepTemp?: boolean;
-	distFilePath?: string;
+	prebuiltDistZip?: PrebuiltDistZip;
 }
 
 // インストール対象として許可されたモジュール
@@ -156,20 +161,24 @@ export async function validateDistDir(distDir: string, versionInfo: VersionInfo)
 	}
 }
 
-async function extractVersionFromZip(distFilePath: string, version: string, distDir: string, rootDir: string): Promise<boolean> {
+export async function validateDistZip(filePath: string): Promise<PrebuiltDistZip> {
 	// zip 内の成果物が dist/ 以下にあること検証
-	const { stdout } = await exec(`unzip -Z1 ${distFilePath}`);
+	const { stdout } = await exec(`unzip -Z1 ${filePath}`);
 	const entries = stdout.trim().split("\n").filter(Boolean);
 	const invalidEntries = entries.filter(entry => !entry.startsWith("dist/"));
 	if (invalidEntries.length > 0) {
 		throw new Error(`Invalid zip file: all entries must start with "dist/". Invalid entries: ${invalidEntries.slice(0, 5).join(", ")}`);
 	}
+	return { filePath, entries };
+}
+
+async function extractVersionFromZip(prebuiltDistZip: PrebuiltDistZip, version: string, rootDir: string): Promise<boolean> {
+	const { filePath, entries } = prebuiltDistZip;
 
 	// dist 以下にバージョンディレクトリが存在するか確認
 	const versionEntry = `dist/${version}/`;
 	const canvasVersionEntry = `dist/${version}-canvas/`;
-	const hasVersion = entries.includes(versionEntry);
-	if (!hasVersion) {
+	if (!entries.includes(versionEntry)) {
 		return false;
 	}
 
@@ -178,7 +187,7 @@ async function extractVersionFromZip(distFilePath: string, version: string, dist
 	if (entries.includes(canvasVersionEntry)) {
 		patterns.push(`"dist/${version}-canvas/*"`);
 	}
-	await exec(`unzip -o ${distFilePath} ${patterns.join(" ")} -d ${rootDir}`);
+	await exec(`unzip -o ${filePath} ${patterns.join(" ")} -d ${rootDir}`);
 	const extracted = [version, ...(entries.includes(canvasVersionEntry) ? [`${version}-canvas`] : [])];
 	console.log(`Extracted: ${extracted.join(", ")}`);
 	return true;
@@ -190,8 +199,8 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 	const distDir = resolve(options.distDir, version);
 
 	// dist-file-path が指定されている場合は zip から展開を試みる
-	if (options.distFilePath) {
-		const extracted = await extractVersionFromZip(options.distFilePath, version, options.distDir, options.cwd);
+	if (options.prebuiltDistZip) {
+		const extracted = await extractVersionFromZip(options.prebuiltDistZip, version, options.cwd);
 		if (extracted) {
 			await validateDistDir(distDir, versionInfo);
 			return false;

@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import semver from "semver";
-import { buildVersion, type BuildOptions } from "./build.js";
+import { buildVersion, validateDistZip, type BuildOptions } from "./build.js";
 import { addVersion } from "./addVersion.js";
 import { readVersionsJson } from "./utils.js";
 
@@ -70,11 +70,12 @@ async function runBuild(args: string[]) {
 	}
 
 	const versionsJson = await readVersionsJson(versionsJsonPath);
+	const prebuiltDistZip = values["prebuilt-dist-zip"] ? await validateDistZip(resolve(rootDir, values["prebuilt-dist-zip"])) : undefined;
 	const buildOptions = {
 		cwd: rootDir,
 		distDir: resolve(rootDir, "dist"),
 		keepTemp: values["keep-temp"],
-		distFilePath: values["prebuilt-dist-zip"] ? resolve(rootDir, values["prebuilt-dist-zip"]) : undefined,
+		prebuiltDistZip,
 	} satisfies BuildOptions;
 
 	if (values.version === "all") {
@@ -86,7 +87,7 @@ async function runBuild(args: string[]) {
 			const built = await buildVersion(versionInfo, buildOptions);
 			if (built) builtCount++;
 		}
-		if (buildOptions.distFilePath && builtCount === 0) {
+		if (buildOptions.prebuiltDistZip && builtCount === 0) {
 			throw new Error("No versions were built: all versions were found in the zip file. The zip may be up to date already.");
 		}
 	} else {
