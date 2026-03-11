@@ -72,7 +72,7 @@ async function runBuild(args: string[]) {
 	const versionsJson = await readVersionsJson(versionsJsonPath);
 	const prebuiltDistZip = values["prebuilt-dist-zip"] ? await validateDistZip(resolve(rootDir, values["prebuilt-dist-zip"])) : undefined;
 	const buildOptions = {
-		cwd: rootDir,
+		rootDir,
 		distDir: resolve(rootDir, "dist"),
 		keepTemp: values["keep-temp"],
 		prebuiltDistZip,

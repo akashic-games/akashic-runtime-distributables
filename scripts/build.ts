@@ -17,7 +17,7 @@ export interface PrebuiltDistZip {
 }
 
 export interface BuildOptions {
-	cwd: string;
+	rootDir: string;
 	distDir: string;
 	keepTemp?: boolean;
 	prebuiltDistZip?: PrebuiltDistZip;
@@ -195,12 +195,12 @@ async function extractVersionFromZip(prebuiltDistZip: PrebuiltDistZip, version: 
 
 export async function buildVersion(versionInfo: VersionInfo, options: BuildOptions): Promise<boolean> {
 	const version = versionInfo.version;
-	const cwd = options.cwd;
+	const rootDir = options.rootDir;
 	const distDir = resolve(options.distDir, version);
 
 	// dist-file-path が指定されている場合は zip から展開を試みる
 	if (options.prebuiltDistZip) {
-		const extracted = await extractVersionFromZip(options.prebuiltDistZip, version, options.cwd);
+		const extracted = await extractVersionFromZip(options.prebuiltDistZip, version, options.rootDir);
 		if (extracted) {
 			await validateDistDir(distDir, versionInfo);
 			return false;
@@ -219,7 +219,7 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 	console.log();
 
 	// 一時ディレクトリに依存関係をインストール
-	const tempDir = await installDependencies(versionInfo, cwd);
+	const tempDir = await installDependencies(versionInfo, rootDir);
 
 	// 中間ファイルの出力先ディレクトリ
 	const buildDir = resolve(tempDir, "build");
@@ -246,10 +246,10 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 
 			await exec(
 				`npx browserify ${playlogClientEntryPath} -t [babelify] -s ${playlogClientFilename} -o ${buildDir}/${playlogClientFilename}.js`,
-				{ cwd }
+				{ cwd: rootDir }
 			);
 			await exec(`npx uglifyjs ${buildDir}/${playlogClientFilename}.js --comments -o ${buildDir}/${playlogClientFilename}.min.js`, {
-				cwd,
+				cwd: rootDir,
 			});
 			await validateModule(resolve(buildDir, `${playlogClientFilename}.js`));
 			await validateModule(resolve(buildDir, `${playlogClientFilename}.min.js`));
