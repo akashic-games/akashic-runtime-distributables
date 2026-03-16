@@ -18,7 +18,6 @@ export interface PrebuiltDistZip {
 
 export interface BuildOptions {
 	rootDir: string;
-	distDir: string;
 	keepTemp?: boolean;
 	prebuiltDistZip?: PrebuiltDistZip;
 }
@@ -196,24 +195,25 @@ async function extractVersionFromZip(prebuiltDistZip: PrebuiltDistZip, version: 
 export async function buildVersion(versionInfo: VersionInfo, options: BuildOptions): Promise<boolean> {
 	const version = versionInfo.version;
 	const rootDir = options.rootDir;
-	const distDir = resolve(options.distDir, version);
+	const distDir = resolve(options.rootDir, "dist");
+	const versionDistDir = resolve(distDir, version);
 
-	if (existsSync(distDir)) {
-		console.warn(`Warning: ${distDir} already exists, overwriting...`);
+	if (existsSync(versionDistDir)) {
+		console.warn(`Warning: ${versionDistDir} already exists, overwriting...`);
 	}
 
 	// dist-file-path が指定されている場合は zip から展開を試みる
 	if (options.prebuiltDistZip) {
 		const extracted = await extractVersionFromZip(options.prebuiltDistZip, version, options.rootDir);
 		if (extracted) {
-			await validateDistDir(distDir, versionInfo);
+			await validateDistDir(versionDistDir, versionInfo);
 			return false;
 		}
 		console.log(`Version ${version} not found in zip, building from source...`);
 	}
 
-	await rm(distDir, { recursive: true, force: true });
-	await mkdir(distDir, { recursive: true });
+	await rm(versionDistDir, { recursive: true, force: true });
+	await mkdir(versionDistDir, { recursive: true });
 
 	console.log();
 	console.log(`=== Building version ${version} ===`);
@@ -232,7 +232,7 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 
 	// Canvas版が利用可能かどうか (v2以降)
 	const hasCanvasVersion = semver.gte(engineFilesPackageJSON.version, "2.0.0");
-	const akashicRuntimeCanvasDir = resolve(options.distDir, `${version}-canvas`);
+	const akashicRuntimeCanvasDir = resolve(distDir, `${version}-canvas`);
 
 	try {
 		// akashic-runtime (engine-files + playlog-client) のビルド
@@ -303,8 +303,8 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			console.log("generate akashic-runtime directory");
 
 			// 3.1. 通常版のファイルをコピー
-			await copyFile(resolve(buildDir, `${playlogClientFilename}.min.js`), resolve(distDir, `${playlogClientFilename}.js`));
-			await copyFile(resolve(buildDir, `${engineFilesFilename}.js`), resolve(distDir, `${engineFilesFilename}.js`));
+			await copyFile(resolve(buildDir, `${playlogClientFilename}.min.js`), resolve(versionDistDir, `${playlogClientFilename}.js`));
+			await copyFile(resolve(buildDir, `${engineFilesFilename}.js`), resolve(versionDistDir, `${engineFilesFilename}.js`));
 
 			// 3.2. Canvas版のファイルをコピー（v2以降のみ）
 			if (hasCanvasVersion) {
@@ -373,7 +373,7 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			// 4. entrypoint のファイルを dist にコピー
 			const filepaths = globSync(resolve(outputPath, "*"));
 			for (const filepath of filepaths) {
-				await copyFile(filepath, resolve(distDir, basename(filepath)));
+				await copyFile(filepath, resolve(versionDistDir, basename(filepath)));
 			}
 
 			// 4.1. Canvas版ディレクトリにもコピー
@@ -386,17 +386,17 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 		}
 
 		// MANIFEST.md を生成
-		await generateManifestMarkdown(versionInfo, tempDir, distDir);
+		await generateManifestMarkdown(versionInfo, tempDir, versionDistDir);
 
 		// Canvas版ディレクトリにもコピー
 		if (hasCanvasVersion) {
-			await copyFile(resolve(distDir, "MANIFEST.md"), resolve(akashicRuntimeCanvasDir, "MANIFEST.md"));
+			await copyFile(resolve(versionDistDir, "MANIFEST.md"), resolve(akashicRuntimeCanvasDir, "MANIFEST.md"));
 		}
 
-		await validateDistDir(distDir, versionInfo);
+		await validateDistDir(versionDistDir, versionInfo);
 
 		console.log();
-		console.log(`✓ Version ${version} built successfully in ${distDir}`);
+		console.log(`✓ Version ${version} built successfully in ${versionDistDir}`);
 	} finally {
 		// 一時ディレクトリをクリーンアップ
 		if (options.keepTemp) {

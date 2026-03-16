@@ -73,7 +73,6 @@ async function runBuild(args: string[]) {
 	const prebuiltDistZip = values["prebuilt-dist-zip"] ? await validateDistZip(resolve(rootDir, values["prebuilt-dist-zip"])) : undefined;
 	const buildOptions = {
 		rootDir,
-		distDir: resolve(rootDir, "dist"),
 		keepTemp: values["keep-temp"],
 		prebuiltDistZip,
 	} satisfies BuildOptions;
