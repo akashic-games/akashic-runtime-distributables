@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import semver from "semver";
-import { buildVersion, type BuildOptions } from "./build.js";
+import { buildVersion, validateDistZip, type BuildOptions } from "./build.js";
 import { addVersion } from "./addVersion.js";
 import type { VersionsInfoDependency } from "./types.js";
 import { readVersionsJson } from "./utils.js";
@@ -78,6 +78,9 @@ async function runBuild(args: string[]) {
 				type: "boolean",
 				default: false,
 			},
+			"prebuilt-dist-zip": {
+				type: "string",
+			},
 		},
 		allowPositionals: false,
 	});
@@ -87,18 +90,24 @@ async function runBuild(args: string[]) {
 	}
 
 	const versionsJson = await readVersionsJson(versionsJsonPath);
+	const prebuiltDistZip = values["prebuilt-dist-zip"] ? await validateDistZip(resolve(rootDir, values["prebuilt-dist-zip"])) : undefined;
 	const buildOptions = {
-		cwd: rootDir,
-		distDir: resolve(rootDir, "dist"),
+		rootDir,
 		keepTemp: values["keep-temp"],
+		prebuiltDistZip,
 	} satisfies BuildOptions;
 
 	if (values.version === "all") {
 		// 全バージョンをビルド
 		console.log(`Building all ${versionsJson.versions.length} versions...`);
 		console.log();
+		let builtCount = 0;
 		for (const versionInfo of versionsJson.versions) {
-			await buildVersion(versionInfo, buildOptions);
+			const built = await buildVersion(versionInfo, buildOptions);
+			if (built) builtCount++;
+		}
+		if (buildOptions.prebuiltDistZip && builtCount === 0) {
+			throw new Error("No versions were built: all versions were found in the zip file. The zip may be up to date already.");
 		}
 	} else {
 		// 特定バージョンをビルド

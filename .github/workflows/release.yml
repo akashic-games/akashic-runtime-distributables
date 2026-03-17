@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      prebuilt_release:
+        description: "Release tag to download dist.zip from (e.g. 2026-01-01). Use 'latest' for the latest release. Leave empty to build all from source."
+        required: false
+        type: string
 
 env:
   NODE_VERSION: 24
@@ -29,10 +34,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      - name: Download prebuilt dist zip
+        if: inputs.prebuilt_release != ''
+        run: |
+          if [ "$PREBUILT_RELEASE" = "latest" ]; then
+            gh release download --pattern "dist.zip" --output prebuilt-dist.zip
+          else
+            gh release download "$PREBUILT_RELEASE" --pattern "dist.zip" --output prebuilt-dist.zip
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREBUILT_RELEASE: ${{ inputs.prebuilt_release }}
+
       - name: Build all
         run: |
           pnpm install
-          pnpm build:all
+          pnpm build:all ${{ inputs.prebuilt_release != '' && '--prebuilt-dist-zip prebuilt-dist.zip' || '' }}
 
       - name: Create distributions
         run: zip -r dist.zip ./dist
@@ -46,8 +63,6 @@ jobs:
           VERSIONS=$(jq -r '.versions[] | "- " + .version' versions.json)
           {
             echo "body<<EOF"
-            echo "# Release (${DATE})"
-            echo ""
             echo "$VERSIONS"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"

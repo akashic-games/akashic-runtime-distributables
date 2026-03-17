@@ -1,8 +1,8 @@
 import { exec as execCallback } from "node:child_process";
 import { basename, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { copyFile, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
 import { globSync } from "glob";
 import semver from "semver";
 import { validateModule } from "./validateModule.js";
@@ -11,10 +11,15 @@ import type { VersionInfo } from "./types.js";
 
 const exec = promisify(execCallback);
 
+export interface PrebuiltDistZip {
+	filePath: string;
+	entries: string[];
+}
+
 export interface BuildOptions {
-	cwd: string;
-	distDir: string;
+	rootDir: string;
 	keepTemp?: boolean;
+	prebuiltDistZip?: PrebuiltDistZip;
 }
 
 // インストール対象として許可されたモジュール
@@ -85,20 +90,137 @@ async function generateManifestMarkdown(versionInfo: VersionInfo, tempDir: strin
 	console.log("MANIFEST.md saved");
 }
 
-export async function buildVersion(versionInfo: VersionInfo, options: BuildOptions) {
-	const version = versionInfo.version;
-	const cwd = options.cwd;
-	const distDir = resolve(options.distDir, version);
+export async function validateDistDir(distDir: string, versionInfo: VersionInfo): Promise<void> {
+	// ディレクトリが空でないか確認する
+	const files = readdirSync(distDir);
+	if (files.length === 0) {
+		throw new Error(`validateDistDir: directory is empty: ${distDir}`);
+	}
 
-	await rm(distDir, { recursive: true, force: true });
-	await mkdir(distDir, { recursive: true });
+	// 必須ファイル
+	const requiredFiles: (string | RegExp)[] = [
+		"MANIFEST.md",
+		"bundle_info.txt",
+		"bootstrap.js",
+		"entry.js",
+		"akashic-engine.js",
+		"game-driver.js",
+		/^playlogClientV.+\.js$/,
+		/^engineFilesV.+\.js$/,
+	];
+	// オプショナルファイル
+	const optionalFiles: (string | RegExp)[] = [
+		"pdi-common-impl.js", // v3 以降にのみ存在
+	];
+
+	const matchesRequired = (file: string, required: string | RegExp) =>
+		typeof required === "string" ? file === required : required.test(file);
+	for (const required of requiredFiles) {
+		if (!files.some(f => matchesRequired(f, required))) {
+			throw new Error(`validateDistDir: required file not found: ${required}`);
+		}
+	}
+
+	// 必須・オプショナルファイル以外が存在しないか確認
+	const allowedFiles = [...requiredFiles, ...optionalFiles];
+	const unexpectedFiles = files.filter(f => !allowedFiles.some(allowed => matchesRequired(f, allowed)));
+	if (unexpectedFiles.length > 0) {
+		throw new Error(`validateDistDir: unexpected file(s) found: ${unexpectedFiles.join(", ")}`);
+	}
+
+	// ファイルの内容を簡易的に確認
+	for (const file of files) {
+		const { size } = await stat(resolve(distDir, file));
+		if (size === 0) {
+			throw new Error(`validateDistDir: file is empty: ${file}`);
+		}
+	}
+
+	// bundle_info.txt に engine-files と pdi-game-runner のバージョン行が含まれるか確認する
+	const bundleInfo = await readFile(resolve(distDir, "bundle_info.txt"), "utf-8");
+	const engineFilesMatch = bundleInfo.match(/^engine-files: (.+)$/m);
+	const pdiGameRunnerMatch = bundleInfo.match(/^pdi-game-runner: (.+)$/m);
+	if (!engineFilesMatch) {
+		throw new Error(`validateDistDir: bundle_info.txt is missing "engine-files" line`);
+	}
+	if (!pdiGameRunnerMatch) {
+		throw new Error(`validateDistDir: bundle_info.txt is missing "pdi-game-runner" line`);
+	}
+
+	// bundle_info.txt に記載されたバージョンが versions.json の定義と一致するか確認する
+	const expectedEngineFiles = versionInfo.dependencies["@akashic/engine-files"];
+	const expectedPdiGameRunner = versionInfo.dependencies["@akashic/pdi-game-runner"];
+	if (engineFilesMatch[1] !== expectedEngineFiles) {
+		throw new Error(`validateDistDir: engine-files version mismatch: expected ${expectedEngineFiles}, got ${engineFilesMatch[1]}`);
+	}
+	if (pdiGameRunnerMatch[1] !== expectedPdiGameRunner) {
+		throw new Error(
+			`validateDistDir: pdi-game-runner version mismatch: expected ${expectedPdiGameRunner}, got ${pdiGameRunnerMatch[1]}`
+		);
+	}
+}
+
+export async function validateDistZip(filePath: string): Promise<PrebuiltDistZip> {
+	// zip 内の成果物が dist/ 以下にあること検証
+	const { stdout } = await exec(`unzip -Z1 ${filePath}`);
+	const entries = stdout.trim().split("\n").filter(Boolean);
+	const invalidEntries = entries.filter(entry => !entry.startsWith("dist/"));
+	if (invalidEntries.length > 0) {
+		throw new Error(`Invalid zip file: all entries must start with "dist/". Invalid entries: ${invalidEntries.slice(0, 5).join(", ")}`);
+	}
+	return { filePath, entries };
+}
+
+async function extractVersionFromZip(prebuiltDistZip: PrebuiltDistZip, version: string, rootDir: string): Promise<boolean> {
+	const { filePath, entries } = prebuiltDistZip;
+
+	// dist 以下にバージョンディレクトリが存在するか確認
+	const versionEntry = `dist/${version}/`;
+	const canvasVersionEntry = `dist/${version}-canvas/`;
+	if (!entries.includes(versionEntry)) {
+		return false;
+	}
+
+	// 対象のバージョンのみ展開
+	const patterns = [`"dist/${version}/*"`];
+	if (entries.includes(canvasVersionEntry)) {
+		patterns.push(`"dist/${version}-canvas/*"`);
+	}
+	await exec(`unzip -o ${filePath} ${patterns.join(" ")} -d ${rootDir}`);
+	const extracted = [version, ...(entries.includes(canvasVersionEntry) ? [`${version}-canvas`] : [])];
+	console.log(`Extracted: ${extracted.join(", ")}`);
+	return true;
+}
+
+export async function buildVersion(versionInfo: VersionInfo, options: BuildOptions): Promise<boolean> {
+	const version = versionInfo.version;
+	const rootDir = options.rootDir;
+	const distDir = resolve(options.rootDir, "dist");
+	const versionDistDir = resolve(distDir, version);
+
+	if (existsSync(versionDistDir)) {
+		console.warn(`Warning: ${versionDistDir} already exists, overwriting...`);
+	}
+
+	// dist-file-path が指定されている場合は zip から展開を試みる
+	if (options.prebuiltDistZip) {
+		const extracted = await extractVersionFromZip(options.prebuiltDistZip, version, options.rootDir);
+		if (extracted) {
+			await validateDistDir(versionDistDir, versionInfo);
+			return false;
+		}
+		console.log(`Version ${version} not found in zip, building from source...`);
+	}
+
+	await rm(versionDistDir, { recursive: true, force: true });
+	await mkdir(versionDistDir, { recursive: true });
 
 	console.log();
 	console.log(`=== Building version ${version} ===`);
 	console.log();
 
 	// 一時ディレクトリに依存関係をインストール
-	const tempDir = await installDependencies(versionInfo, cwd);
+	const tempDir = await installDependencies(versionInfo, rootDir);
 
 	// 中間ファイルの出力先ディレクトリ
 	const buildDir = resolve(tempDir, "build");
@@ -110,7 +232,7 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 
 	// Canvas版が利用可能かどうか (v2以降)
 	const hasCanvasVersion = semver.gte(engineFilesPackageJSON.version, "2.0.0");
-	const akashicRuntimeCanvasDir = resolve(options.distDir, `${version}-canvas`);
+	const akashicRuntimeCanvasDir = resolve(distDir, `${version}-canvas`);
 
 	try {
 		// akashic-runtime (engine-files + playlog-client) のビルド
@@ -125,10 +247,10 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 
 			await exec(
 				`npx browserify ${playlogClientEntryPath} -t [babelify] -s ${playlogClientFilename} -o ${buildDir}/${playlogClientFilename}.js`,
-				{ cwd }
+				{ cwd: rootDir }
 			);
 			await exec(`npx uglifyjs ${buildDir}/${playlogClientFilename}.js --comments -o ${buildDir}/${playlogClientFilename}.min.js`, {
-				cwd,
+				cwd: rootDir,
 			});
 			await validateModule(resolve(buildDir, `${playlogClientFilename}.js`));
 			await validateModule(resolve(buildDir, `${playlogClientFilename}.min.js`));
@@ -181,8 +303,8 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			console.log("generate akashic-runtime directory");
 
 			// 3.1. 通常版のファイルをコピー
-			await copyFile(resolve(buildDir, `${playlogClientFilename}.min.js`), resolve(distDir, `${playlogClientFilename}.js`));
-			await copyFile(resolve(buildDir, `${engineFilesFilename}.js`), resolve(distDir, `${engineFilesFilename}.js`));
+			await copyFile(resolve(buildDir, `${playlogClientFilename}.min.js`), resolve(versionDistDir, `${playlogClientFilename}.js`));
+			await copyFile(resolve(buildDir, `${engineFilesFilename}.js`), resolve(versionDistDir, `${engineFilesFilename}.js`));
 
 			// 3.2. Canvas版のファイルをコピー（v2以降のみ）
 			if (hasCanvasVersion) {
@@ -251,7 +373,7 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			// 4. entrypoint のファイルを dist にコピー
 			const filepaths = globSync(resolve(outputPath, "*"));
 			for (const filepath of filepaths) {
-				await copyFile(filepath, resolve(distDir, basename(filepath)));
+				await copyFile(filepath, resolve(versionDistDir, basename(filepath)));
 			}
 
 			// 4.1. Canvas版ディレクトリにもコピー
@@ -264,15 +386,17 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 		}
 
 		// MANIFEST.md を生成
-		await generateManifestMarkdown(versionInfo, tempDir, distDir);
+		await generateManifestMarkdown(versionInfo, tempDir, versionDistDir);
 
 		// Canvas版ディレクトリにもコピー
 		if (hasCanvasVersion) {
-			await copyFile(resolve(distDir, "MANIFEST.md"), resolve(akashicRuntimeCanvasDir, "MANIFEST.md"));
+			await copyFile(resolve(versionDistDir, "MANIFEST.md"), resolve(akashicRuntimeCanvasDir, "MANIFEST.md"));
 		}
 
+		await validateDistDir(versionDistDir, versionInfo);
+
 		console.log();
-		console.log(`✓ Version ${version} built successfully in ${distDir}`);
+		console.log(`✓ Version ${version} built successfully in ${versionDistDir}`);
 	} finally {
 		// 一時ディレクトリをクリーンアップ
 		if (options.keepTemp) {
@@ -282,4 +406,6 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			await rm(tempDir, { recursive: true, force: true });
 		}
 	}
+
+	return true;
 }
