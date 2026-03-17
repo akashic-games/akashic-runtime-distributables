@@ -1,4 +1,4 @@
-import { Script, createContext } from "node:vm";
+import { Script } from "node:vm";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
@@ -16,14 +16,6 @@ export async function validateModule(filepath: string) {
 		throw new Error("The file is empty.");
 	}
 
-	// 簡易的にコンパイルエラーを確認
-	const script = new Script(data);
-	const context = createContext({
-		setTimeout,
-		setInterval,
-		console,
-		Buffer,
-		process: { env: {} },
-	});
-	script.runInContext(context);
+	// 構文エラーを確認 (実行はしない)
+	new Script(data);
 }

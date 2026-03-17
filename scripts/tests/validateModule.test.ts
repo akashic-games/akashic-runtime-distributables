@@ -7,18 +7,13 @@ describe("validateModule", () => {
 		await validateModule(filepath);
 	});
 
-	test("throw error", async () => {
-		const filepath = resolve(__dirname, "fixtures", "throw-error.js");
-		await expect(validateModule(filepath)).rejects.toThrow();
-	});
-
 	test("throw error (empty code)", async () => {
 		const filepath = resolve(__dirname, "fixtures", "empty.js");
 		await expect(validateModule(filepath)).rejects.toThrow();
 	});
 
-	test("throw error (malicious code)", async () => {
-		const filepath = resolve(__dirname, "fixtures", "malicious-code.js");
-		await expect(validateModule(filepath)).rejects.toThrow();
+	test("throw error (syntax error)", async () => {
+		const filepath = resolve(__dirname, "fixtures", "syntax-error.js");
+		await expect(validateModule(filepath)).rejects.toThrow(SyntaxError);
 	});
 });

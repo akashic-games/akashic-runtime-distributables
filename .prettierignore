@@ -2,6 +2,7 @@ node_modules/
 temp/
 dist/
 coverage/
+scripts/tests/fixtures/
 
 package.json
 pnpm-lock.yaml
