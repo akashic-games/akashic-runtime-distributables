@@ -151,11 +151,17 @@ export function calculateVersionFromBase(versions: VersionInfo[], baseVersion: s
 
 /**
  * npm パッケージのバージョンを解決して返す。version が未指定の場合は latest を取得する。
+ * 複数バージョンにマッチする場合（e.g. メジャーバージョン指定）は最新のバージョンを返す。
  */
 async function resolveNpmVersion(packageName: string, version: string = "latest") {
 	try {
-		const { stdout } = await exec(`npm view ${packageName}@${version} version`);
-		return stdout.trim();
+		const { stdout } = await exec(`npm view ${packageName}@${version} version --json`);
+		const parsed: unknown = JSON.parse(stdout.trim());
+		if (Array.isArray(parsed)) {
+			// 複数バージョンにマッチした場合、最後（最新）のバージョンを返す
+			return parsed[parsed.length - 1] as string;
+		}
+		return parsed as string;
 	} catch (error) {
 		throw new Error(
 			`Failed to fetch version of ${packageName}@${version}.\n` + `Error: ${error instanceof Error ? error.message : String(error)}`
