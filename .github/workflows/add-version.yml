@@ -20,7 +20,7 @@ on:
 
 env:
   NODE_VERSION: 24
-  PNPM_VERSION: 10.22.0
+  PNPM_VERSION: 10
 
 permissions:
   contents: write
