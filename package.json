@@ -39,5 +39,12 @@
     "typescript": "^5.9.3",
     "uglify-js": "^3.19.3",
     "vitest": "4.1.6"
+  },
+  "packageManager": "pnpm@10.34.5",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "10.34.5"
+    }
   }
 }
