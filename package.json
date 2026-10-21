@@ -40,5 +40,12 @@
     "uglify-js": "^3.19.3",
     "vitest": "4.1.6"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "pnpm@10.34.5",
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.19.0",
+      "onFail": "error"
+    }
+  }
 }
