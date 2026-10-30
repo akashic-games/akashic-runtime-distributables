@@ -246,10 +246,10 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			const playlogClientFilename = `playlogClientV${playlogClientPackageJSON.version.replace(/[\.-]/g, "_")}`;
 
 			await exec(
-				`npx browserify ${playlogClientEntryPath} -t [babelify] -s ${playlogClientFilename} -o ${buildDir}/${playlogClientFilename}.js`,
+				`npx --no -- browserify ${playlogClientEntryPath} -t [babelify] -s ${playlogClientFilename} -o ${buildDir}/${playlogClientFilename}.js`,
 				{ cwd: rootDir }
 			);
-			await exec(`npx uglifyjs ${buildDir}/${playlogClientFilename}.js --comments -o ${buildDir}/${playlogClientFilename}.min.js`, {
+			await exec(`npx --no -- uglifyjs ${buildDir}/${playlogClientFilename}.js --comments -o ${buildDir}/${playlogClientFilename}.min.js`, {
 				cwd: rootDir,
 			});
 			await validateModule(resolve(buildDir, `${playlogClientFilename}.js`));
@@ -346,9 +346,9 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			//
 			// 特に pdi-common-impl.js は、 pdi-game-runner 自身の配布物には (必要にも関わらず) 含まれていないことに注意。
 			// すなわち上書きではなく、ここで初めて追加されるファイルになっている (pdi-game-runner@3.20.0 現在) 。
-			await exec(`npx browserify -r @akashic/akashic-engine -o ${outputPath}/akashic-engine.js`, { cwd: tempDir });
+			await exec(`npx --no -- browserify -r @akashic/akashic-engine -o ${outputPath}/akashic-engine.js`, { cwd: tempDir });
 			await validateModule(resolve(outputPath, "akashic-engine.js"));
-			await exec(`npx browserify -r @akashic/game-driver -o ${outputPath}/game-driver.js -x @akashic/akashic-engine`, {
+			await exec(`npx --no -- browserify -r @akashic/game-driver -o ${outputPath}/game-driver.js -x @akashic/akashic-engine`, {
 				cwd: tempDir,
 			});
 			await validateModule(resolve(outputPath, "game-driver.js"));
@@ -356,7 +356,7 @@ export async function buildVersion(versionInfo: VersionInfo, options: BuildOptio
 			// pdi-common-impl は v3 以降のみ存在
 			const hasPdiCommonImpl = semver.gte(engineFilesPackageJSON.version, "3.0.0");
 			if (hasPdiCommonImpl) {
-				await exec(`npx browserify -r @akashic/pdi-common-impl -o ${outputPath}/pdi-common-impl.js`, { cwd: tempDir });
+				await exec(`npx --no -- browserify -r @akashic/pdi-common-impl -o ${outputPath}/pdi-common-impl.js`, { cwd: tempDir });
 				await validateModule(resolve(outputPath, "pdi-common-impl.js"));
 			} else {
 				console.log("pdi-common-impl not available for v1/v2, skipping...");
